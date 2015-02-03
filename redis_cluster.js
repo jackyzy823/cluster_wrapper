@@ -1,37 +1,58 @@
-var Redis = require('redis')
-var crc16 = requre('./redis_crc.js')
-// var config = require('./config/config.js')
-var utils = require('./utils.js')
+var sysUtil = require('util');
+var Redis = require('redis');
+var crc16 = require('./redis_crc.js');
+var utils = require('./utils.js');
+var to_array = require("./lib/to_array");
 
+/*DEBUG ONLY*/
+// module.exports.clientsMap = clientsMap;
+// module.exports.slotsPool = slotsPool;
+/*DEBUG ONLY*/
 
-var clientsMap = {}
-var slotsPool = {}
 
 /*
-  @params: redisServers -> json format servers config {port:xx[,host:xx[,slots:"1,2,3-100,101,105-200,xx"]]}
+  @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3-100,101,105-200,xx"]]},{port:xxx}]
 */
-
-function clusterClient(redisServers) {
+function createClient(redisServers) {
+  if (!redisServers) {
+    throw new Error('need init configs');
+    return null;
+  }
+  sysUtil.isArray(redisServers) || (redisServers = [redisServers]);
+  var clientsMap = {};
+  var slotsPool = {};
   /*Initialize pool */
   var client = null;
-  for (var server in redisServers) {
+  redisServers.forEach(function(server) {
     var host = server.host || 'localhost';
-    var port = server.port ||
-      throw new Exception('port should not be undefined!');
+    if (!server.port) {
+      console.log(server);
+      throw new Error('port should not be undefined!');
+    }
+    var port = server.port;
     var slots = utils.parseSlots(server.slots);
     client = Redis.createClient(port, host);
     clientsMap[host + ':' + port] = client;
     slots && slots.forEach(function(item) {
-      slotsPool[item] = client
+      slotsPool[item] = client;
     });
-  }
+  });
   /*Set empty slots*/
-  var size = Object.keys(clientsMap).length - 1;
+  var keys = Object.keys(clientsMap);
+  var size = keys.length - 1;
   for (var i = 0; i < 16384; i++) {
-    slotsPool[i] || slotsPool[i] = clientsMap[Math.random() * size >> 0];
+    slotsPool[i] || ( slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]);
   }
+  return new clusterClient(clientsMap, slotsPool);
 }
-module.exports.clusterClient = clusterClient;
+
+module.exports.createClient = createClient;
+
+function clusterClient(clientsMap, slotsPool) {
+    this.clientsMap = clientsMap;
+    this.slotsPool = slotsPool;
+  }
+  // module.exports.clusterClient = clusterClient;
 
 
 //copy from node_redis/index.js
@@ -75,61 +96,75 @@ commands.forEach(function(fullCommand) {
 });
 
 clusterClient.prototype.send_command = function(command, args, callback) {
-  console.log("use cluster agent");
-  //
-  //do sthing to process command and arguments
-  //
-  var key = args[0];
-  var client = slotsPool[crc16(key)];
+    var self = this;
+    console.log("use cluster agent");
+    //
+    //do sthing to process command and arguments
+    //
+    var key = args[0];
+    console.log('keys',key);
+    var callback = args.pop();
+    console.log('args',args);
+    console.log('callback',callback);
+    var client = this.slotsPool[crc16(key)];
+    console.log('current slot first use port',client.connectionOption.port);
+    client[command](args, function wrap_cb(err, reply) {
+      var tmpClient = null;
 
-  client[command](args, function wrap_cb(err, reply) {
-    var tmpClient = null;
-    if (err == 'MOVED' || err == 'ASK' ) {
-      var dstClient = 'some ip:port';
-      var dstSlot = 'some slots';
-      var tmpInfo = dstClient.split(':');
-      var host = tmpInfo[0];
-      var port = parseInt(tmpInfo[1]);
+      self.DebugError = err;
+      self.DebugReply = reply;
+      var errType=null,errMsg =null;
+      err && (errType = err.message.split(' ')[0]);
+      err && (errMsg  = err.message.split(' ').splice(1).join(' '));
 
-      //update client info and slot info
-      var tmpClient = clientsMap[dstClient];
-      if (!tmpClient) {
-        tmpClient = Redis.createClient(port, host);
-        clientsMap[dstClient] = tmpClient;
-      }
-      slotsPool[dstSlot] = tmpClient;
-    }
-    if( err == 'ASK'){
-      tmpClient.asking(function(error,reply){
-        if(error){
-          //dosthinng
-          callback && callback(error,reply); //use this reply to retrun the outer ;
-          return;
+      if (errType == 'MOVED' || errType == 'ASK') {
+        /*Fetch info in reply*/
+        /* MOVED SLOT SERVERIP:SERVERHOST*/
+        /* ASK SLOT SERVERIP:SERVERHOST*/
+        var tmpReply = errMsg.split(' ');
+        var dstClient = tmpReply[1];
+        var dstSlot = tmpReply[0];
+        var tmpInfo = dstClient.split(':');
+        var host = tmpInfo[0];
+        var port = parseInt(tmpInfo[1]);
+
+
+        /*update client info and slot info*/
+        var tmpClient = self.clientsMap[dstClient];
+        if (!tmpClient) {
+          tmpClient = Redis.createClient(port, host);
+          self.clientsMap[dstClient] = tmpClient;
         }
-        tmpClient[command](args,callback); //use outer callback
+        /*Should move slots when ASK ?*/
+        self.slotsPool[dstSlot] = tmpClient;
+      }
+      if (errType == 'ASK') {
+        console.log("ask using port",tmpClient.connectionOption.port);
+        tmpClient.asking(function(error, reply) {
+          if (error) {
+            callback && callback(error, reply); //use this reply to retrun the outer callback;
+            return;
+          }
+          console.log('args',args);
+          tmpClient[command](args, callback); //use outer callback
+          return;
+        });
+      } else if (errType == 'MOVED') {
+        console.log("moevd using port",tmpClient.connectionOption.port);
+        console.log('args',args);
+        tmpClient[command](args,callback);
         return;
-      });
-    }
-    else if(err == 'MOVED'){
-      tmpClient[command](args,callback);
-      return;
-    }
-    else{
-      callback && callback(err,reply);
-      return;
-    }
+      } else {
+        console.log('no cluster err(MOVED/ASK)');
+        callback && callback(err, reply);
+        return;
+      }
 
-  })
+    })
 
 
-}
-//imply asking
-Redis.RedisClient.prototype.asking = function (callback) {
+  }
+  //imply asking
+Redis.RedisClient.prototype.asking = function(callback) {
   return this.send_command('asking', [], callback);
 };
-
-// Redis.RedisClient.prototype.send_command = function(){
-
-// }
-
-
