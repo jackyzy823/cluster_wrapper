@@ -27,7 +27,7 @@ function createClient(redisServers) {
     var port = server.port;
     var slots = parseSlots(server.slots);
     client = Redis.createClient(port, host);
-    clientsMap[host + ':' + port] = client;
+    clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
       slotsPool[item] = client;
     });
@@ -132,14 +132,15 @@ clusterClient.prototype.send_command = function(command, args, callback) {
         /*update client info and slot info*/
         var tmpClient = self.clientsMap[dstClient];
         if (!tmpClient) {
+          /*New online client*/
           tmpClient = Redis.createClient(port, host);
-          self.clientsMap[dstClient] = tmpClient;
+          self.clientsMap[tmpClient.address] = tmpClient;
         }
         /*Should move slots when ASK ?*/
         self.slotsPool[dstSlot] = tmpClient;
       }
       if (errType == 'ASK') {
-        console.log("ask using port",tmpClient.connectionOption.port);
+        console.log("ask using address",tmpClient.address);
         tmpClient.asking(function(error, reply) {
           if (error) {
             callback && callback(error, reply); //use this reply to retrun the outer callback;
@@ -150,7 +151,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
           return;
         });
       } else if (errType == 'MOVED') {
-        console.log("moevd using port",tmpClient.connectionOption.port);
+        console.log("moevd using address",tmpClient.address);
         console.log('args',args);
         tmpClient[command](args,callback);
         return;
