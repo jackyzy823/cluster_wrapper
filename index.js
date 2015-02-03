@@ -22,7 +22,7 @@ function createClient(redisServers) {
     var host = server.host || '127.0.0.1';
     if (!server.port) {
       console.log(server);
-      throw new Error('port should not be undefined!');
+      throw new Error('port should be defined!');
     }
     var port = server.port;
     var slots = parseSlots(server.slots);
@@ -123,7 +123,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
         /* ASK SLOT SERVERIP:SERVERHOST*/
         var tmpReply = errMsg.split(' ');
         var dstClient = tmpReply[1];
-        var dstSlot = tmpReply[0];
+        var dstSlot = parseInt(tmpReply[0]);
         var tmpInfo = dstClient.split(':');
         var host = tmpInfo[0];
         var port = parseInt(tmpInfo[1]);

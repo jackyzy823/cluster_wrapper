@@ -1,0 +1,27 @@
+{
+  "name": "cluster_wrapper",
+  "version": "0.0.1",
+  "description": "Redis cluster wrapper for node_redis",
+  "keywords": [
+    "redis",
+    "database",
+    "cluster"
+  ],
+  "author": "jackyzy823 <jackyzy823@gmail.com>",
+  "main": "./index.js",
+  "scripts": {
+    "test": "node ./tests/cluster.test.js"
+  },
+  "dependencies":{
+    "redis":"~0.12.1"
+  },
+  "devDependencies": {
+    "metrics": ">=0.1.5",
+    "colors": "~0.6.0-1",
+    "underscore": "~1.4.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jackyzy823/cluster_wrapper.git"
+  }
+}
