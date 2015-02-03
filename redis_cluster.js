@@ -1,6 +1,6 @@
 var sysUtil = require('util');
 var Redis = require('redis');
-var crc16 = require('./lib/crc.js');
+var crc16 = require('./lib/crc16.js');
 var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
 
