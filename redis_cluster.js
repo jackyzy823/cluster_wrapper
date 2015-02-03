@@ -1,33 +1,37 @@
 var Redis = require('redis')
 var crc16 = requre('./redis_crc.js')
-var config = require('./config/config.js')
+// var config = require('./config/config.js')
 var utils = require('./utils.js')
+
 
 var clientsMap = {}
 var slotsPool = {}
 
+/*
+  @params: redisServers -> json format servers config {port:xx[,host:xx[,slots:"1,2,3-100,101,105-200,xx"]]}
+*/
 
-/*Initialize pool */
-
-var client = null;
-for (var server in config.redisServers) {
-  var host = server.host || 'localhost';
-  var port = server.port ||
-    throw new Exception('port should not be undefined!');
-  var slots = utils.parseSlots(server.slots);
-  client = Redis.createClient(port, host);
-  clientsMap[host + ':' + port] = client;
-  slots && slots.forEach(function(item) {
-    slotsPool[item] = client
-  });
+function clusterClient(redisServers) {
+  /*Initialize pool */
+  var client = null;
+  for (var server in redisServers) {
+    var host = server.host || 'localhost';
+    var port = server.port ||
+      throw new Exception('port should not be undefined!');
+    var slots = utils.parseSlots(server.slots);
+    client = Redis.createClient(port, host);
+    clientsMap[host + ':' + port] = client;
+    slots && slots.forEach(function(item) {
+      slotsPool[item] = client
+    });
+  }
+  /*Set empty slots*/
+  var size = Object.keys(clientsMap).length - 1;
+  for (var i = 0; i < 16384; i++) {
+    slotsPool[i] || slotsPool[i] = clientsMap[Math.random() * size >> 0];
+  }
 }
-// set empty slots
-var size = Object.keys(clientsMap).length - 1;
-for (var i = 0; i < 16384; i++) {
-  slotsPool[i] || slotsPool[i] = clientsMap[Math.random() * size >> 0];
-}
-//unref client
-client = null;
+module.exports.clusterClient = clusterClient;
 
 
 //copy from node_redis/index.js
@@ -66,8 +70,8 @@ commands.forEach(function(fullCommand) {
     }
   };
   clusterClient.prototype[command.toUpperCase()] = clusterClient.prototype[command];
-  //for now
-  // do not support for multi
+  //TODO
+  //for now do not support for multi
 });
 
 clusterClient.prototype.send_command = function(command, args, callback) {
@@ -79,6 +83,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
   var client = slotsPool[crc16(key)];
 
   client[command](args, function wrap_cb(err, reply) {
+    var tmpClient = null;
     if (err == 'MOVED' || err == 'ASK' ) {
       var dstClient = 'some ip:port';
       var dstSlot = 'some slots';
@@ -94,33 +99,37 @@ clusterClient.prototype.send_command = function(command, args, callback) {
       }
       slotsPool[dstSlot] = tmpClient;
     }
-
+    if( err == 'ASK'){
+      tmpClient.asking(function(error,reply){
+        if(error){
+          //dosthinng
+          callback && callback(error,reply); //use this reply to retrun the outer ;
+          return;
+        }
+        tmpClient[command](args,callback); //use outer callback
+        return;
+      });
+    }
+    else if(err == 'MOVED'){
+      tmpClient[command](args,callback);
+      return;
+    }
+    else{
+      callback && callback(err,reply);
+      return;
+    }
 
   })
 
 
 }
-//
-Redis.RedisClient.prototype.asking = function(){
-
-}
+//imply asking
+Redis.RedisClient.prototype.asking = function (callback) {
+  return this.send_command('asking', [], callback);
+};
 
 // Redis.RedisClient.prototype.send_command = function(){
 
 // }
 
 
-function clusterClient() {
-
-}
-
-
-// clusterClient.prototype.set = function(key,value,callback) {
-//  var client = slotsPool[crc16(key)];
-//  client.set(key,value,function wrap_cb(err,reply){
-//    if(err == 'MOVED'){
-
-//    }
-//  })
-
-// };
