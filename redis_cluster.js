@@ -6,7 +6,7 @@ var to_array = require("./lib/to_array");
 
 
 /*
-  @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3-100,101,105-200,xx"]]},{port:xxx}]
+  @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
 function createClient(redisServers) {
   if (!redisServers) {
@@ -15,11 +15,11 @@ function createClient(redisServers) {
   }
   sysUtil.isArray(redisServers) || (redisServers = [redisServers]);
   var clientsMap = {};
-  var slotsPool = {};
+  var slotsPool = new Array(16384); //0->16383
   /*Initialize pool */
   var client = null;
   redisServers.forEach(function(server) {
-    var host = server.host || 'localhost';
+    var host = server.host || '127.0.0.1';
     if (!server.port) {
       console.log(server);
       throw new Error('port should not be undefined!');
@@ -165,7 +165,9 @@ clusterClient.prototype.send_command = function(command, args, callback) {
 
 
   }
-  //imply asking
-Redis.RedisClient.prototype.asking = function(callback) {
-  return this.send_command('asking', [], callback);
-};
+/*Imply asking if node_redis not imply*/
+if(!Redis.RedisClient.prototype.asking){
+  Redis.RedisClient.prototype.asking = function(callback) {
+    return this.send_command('asking', [], callback);
+  };
+}
