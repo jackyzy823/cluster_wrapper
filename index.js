@@ -26,7 +26,10 @@ function createClient(redisServers) {
     }
     var port = server.port;
     var slots = parseSlots(server.slots);
+    /*TODO*/
+    /*client should be compatible with node_redis */
     client = Redis.createClient(port, host);
+    /*client.address ip or domain?*/
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
       slotsPool[item] = client;
@@ -46,6 +49,7 @@ module.exports.createClient = createClient;
 function clusterClient(clientsMap, slotsPool) {
     this.clientsMap = clientsMap;
     this.slotsPool = slotsPool;
+    return;
 }
   // module.exports.clusterClient = clusterClient;
 
