@@ -1,5 +1,5 @@
 var assert = require('assert')
-var crc16 = require('./../redis_crc.js')
+var crc16 = require('./../lib/crc16.js')
 
 assert.equal(2022,crc16('date'));
 assert.equal(0x31C3,crc16('123456789'));
