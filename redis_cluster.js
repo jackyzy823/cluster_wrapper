@@ -1,13 +1,8 @@
 var sysUtil = require('util');
 var Redis = require('redis');
-var crc16 = require('./redis_crc.js');
-var utils = require('./utils.js');
+var crc16 = require('./lib/crc.js');
+var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
-
-/*DEBUG ONLY*/
-// module.exports.clientsMap = clientsMap;
-// module.exports.slotsPool = slotsPool;
-/*DEBUG ONLY*/
 
 
 /*
@@ -30,7 +25,7 @@ function createClient(redisServers) {
       throw new Error('port should not be undefined!');
     }
     var port = server.port;
-    var slots = utils.parseSlots(server.slots);
+    var slots = parseSlots(server.slots);
     client = Redis.createClient(port, host);
     clientsMap[host + ':' + port] = client;
     slots && slots.forEach(function(item) {
@@ -51,7 +46,7 @@ module.exports.createClient = createClient;
 function clusterClient(clientsMap, slotsPool) {
     this.clientsMap = clientsMap;
     this.slotsPool = slotsPool;
-  }
+}
   // module.exports.clusterClient = clusterClient;
 
 
@@ -103,16 +98,21 @@ clusterClient.prototype.send_command = function(command, args, callback) {
     //
     var key = args[0];
     console.log('keys',key);
-    var callback = args.pop();
+    if( !callback && typeof args[args.length-1 ] == 'function' ){
+      callback = args.pop();      
+    }
     console.log('args',args);
     console.log('callback',callback);
     var client = this.slotsPool[crc16(key)];
     console.log('current slot first use port',client.connectionOption.port);
-    client[command](args, function wrap_cb(err, reply) {
+    client[command](args, function wrapCallback(err, reply) {
       var tmpClient = null;
 
+      /*DEBUG ONLY*/
       self.DebugError = err;
       self.DebugReply = reply;
+      /*DEBUG ONLY*/
+
       var errType=null,errMsg =null;
       err && (errType = err.message.split(' ')[0]);
       err && (errMsg  = err.message.split(' ').splice(1).join(' '));
