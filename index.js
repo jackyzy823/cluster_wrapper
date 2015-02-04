@@ -2,7 +2,7 @@ var Redis = require('redis');
 var crc16 = require('./lib/crc16.js');
 var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
-var events = require("events"),
+var events = require("events");
 var util = require('util');
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
