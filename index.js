@@ -2,8 +2,8 @@ var Redis = require('redis');
 var crc16 = require('./lib/crc16.js');
 var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
-
-
+var events = require("events"),
+var util = require('util');
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
@@ -16,7 +16,7 @@ function createClient(redisServers) {
     /*simple compatible for redis.CreateClient(port,host)*/
     redisServers = [{port:arguments[0],host:arguments[1]}];
   }
-  
+
   Array.isArray(redisServers) || (redisServers = [redisServers]);
   var clientsMap = {};
   var slotsPool = new Array(16384); //0->16383
@@ -35,6 +35,9 @@ function createClient(redisServers) {
     /*What if cluster is offline after init?*/
     /*Not described in redis cluster spec*/
     client = Redis.createClient(port, host);
+    // client.on('error',function(msg){
+
+    // })
     /*client.address ip or domain?*/
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
@@ -53,11 +56,26 @@ function createClient(redisServers) {
 module.exports.createClient = createClient;
 
 function clusterClient(clientsMap, slotsPool) {
-    this.clientsMap = clientsMap;
-    this.slotsPool = slotsPool;
-    return;
-  }
-  // module.exports.clusterClient = clusterClient;
+  this.clientsMap = clientsMap;
+  this.slotsPool = slotsPool;
+  //install listener on each clients
+  events.EventEmitter.call(this);
+  return;
+}
+module.exports.clusterClient = clusterClient;
+    
+util.inherits(clusterClient, events.EventEmitter);
+
+/*SHOULD LISTEN EVENTS on every client!*/
+/*To act as redisClient*/
+/*EVENTS :ready error drain end reconnecting idle message pmessage monitor connect*/
+// clusterClient.prototype.install_listeners = function() {
+//    var self  = this;
+//   foreach(clients in clientmap) -> clients.on('xx',function(xx){self.emit('xx')})
+//     });
+// };
+
+
 
 
 //copy from node_redis/index.js
