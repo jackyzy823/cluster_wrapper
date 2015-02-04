@@ -113,19 +113,17 @@ commands.forEach(function(fullCommand) {
 
 clusterClient.prototype.send_command = function(command, args, callback) {
   var self = this;
-  console.log("use cluster agent");
   //
-  //do sthing to process command and arguments
+  // process command and arguments and callback accroding to RedisClient.prototype.send_command
   //
   var key = args[0];
-  console.log('keys', key);
-  if (!callback && typeof args[args.length - 1] == 'function') {
+  // console.log('keys', key);
+  /*typeof args[args.length - 1] == 'undefined' accroding to RedisClient.prototype.send_command*/
+  if (!callback && (typeof args[args.length - 1] == 'function' || typeof args[args.length - 1] == 'undefined')) {
     callback = args.pop();
   }
-  console.log('args', args);
-  console.log('callback', callback);
   var client = this.slotsPool[crc16(key)];
-  console.log('current slot first use port', client.connectionOption.port);
+  // console.log('current slot first use port', client.connectionOption.port);
   client[command](args, function wrapCallback(err, reply) {
     var tmpClient = null;
 
@@ -156,32 +154,82 @@ clusterClient.prototype.send_command = function(command, args, callback) {
       }
     }
     if (errType == 'ASK') {
-      console.log("ask using address", tmpClient.address);
+      // console.log("ask using address", tmpClient.address);
       tmpClient.asking(function(error, reply) {
         if (error) {
           callback && callback(error, reply); //use this reply to retrun the outer callback;
           return;
         }
-        console.log('args', args);
+        // console.log('args', args);
         tmpClient[command](args, callback); //use outer callback
         return;
       });
     } else if (errType == 'MOVED') {
       /*update slots cache after MOVED*/
       self.slotsPool[dstSlot] = tmpClient;
-      console.log("moevd using address", tmpClient.address);
-      console.log('args', args);
+      // console.log("moevd using address", tmpClient.address);
+      // console.log('args', args);
       tmpClient[command](args, callback);
       return;
     } else {
-      console.log('no cluster err(MOVED/ASK)');
+      // console.log('no cluster err(MOVED/ASK)');
       callback && callback(err, reply);
       return;
     }
   });
 }
 
+/*Copy from node_redis*/
+/*MULTI and EXEC will not support*/
+clusterClient.prototype.HMGET = clusterClient.prototype.hmget = function(arg1, arg2, arg3) {
+  if (Array.isArray(arg2) && typeof arg3 === "function") {
+    return this.send_command("hmget", [arg1].concat(arg2), arg3);
+  } else if (Array.isArray(arg1) && typeof arg2 === "function") {
+    return this.send_command("hmget", arg1, arg2);
+  } else {
+    return this.send_command("hmget", to_array(arguments));
+  }
+};
 
+clusterClient.prototype.HMSET = clusterClient.prototype.hmset = function(args, callback) {
+  var tmp_args, tmp_keys, i, il, key;
+
+  if (Array.isArray(args) && typeof callback === "function") {
+    return this.send_command("hmset", args, callback);
+  }
+
+  args = to_array(arguments);
+  if (typeof args[args.length - 1] === "function") {
+    callback = args[args.length - 1];
+    args.length -= 1;
+  } else {
+    callback = null;
+  }
+
+  if (args.length === 2 && (typeof args[0] === "string" || typeof args[0] === "number") && typeof args[1] === "object") {
+    // User does: client.hmset(key, {key1: val1, key2: val2})
+    // assuming key is a string, i.e. email address
+
+    // if key is a number, i.e. timestamp, convert to string
+    if (typeof args[0] === "number") {
+      args[0] = args[0].toString();
+    }
+
+    tmp_args = [args[0]];
+    tmp_keys = Object.keys(args[1]);
+    for (i = 0, il = tmp_keys.length; i < il; i++) {
+      key = tmp_keys[i];
+      tmp_args.push(key);
+      tmp_args.push(args[1][key]);
+    }
+    args = tmp_args;
+  }
+
+  return this.send_command("hmset", args, callback);
+};
+
+/*TODO*/
+/*ADD 'EVAL' command*/
 
 /*Imply asking if node_redis not imply*/
 if (!Redis.RedisClient.prototype.asking) {
