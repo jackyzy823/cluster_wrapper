@@ -23,3 +23,6 @@ redis.set('msg', '1234', function(err, reply) {
     return;
   })
 });
+
+
+/*Test not supported command:info ,multi,exec ...etc*/
