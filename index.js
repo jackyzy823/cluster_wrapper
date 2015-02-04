@@ -12,6 +12,11 @@ function createClient(redisServers) {
     throw new Error('need init configs');
     return null;
   }
+  if(arguments.length == 2){
+    /*simple compatible for redis.CreateClient(port,host)*/
+    redisServers = [{port:arguments[0],host:arguments[1]}];
+  }
+  
   Array.isArray(redisServers) || (redisServers = [redisServers]);
   var clientsMap = {};
   var slotsPool = new Array(16384); //0->16383
