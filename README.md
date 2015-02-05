@@ -1,10 +1,10 @@
-cluster_wrapper - a node.js redis cluster wrapper for node_redis
-============================
-##Dependencies
+# cluster_wrapper  
+####a node.js redis cluster wrapper for node_redis
+
+###Dependencies
 [node_redis](https://github.com/mranney/node_redis)
 
-
-##Usage
+###Usage
 ```js
 var config = [
     {port:30001, slots:'0~3276'},
@@ -22,7 +22,7 @@ redis.set('msg','1234',function(err,reply){
   });
 });
 ```
-Works the same as [node_redis](https://github.com/mranney/node_redis),Handling 'MOVED'/'ASK' internal in this lib.
+Works the same as [node_redis](https://github.com/mranney/node_redis), handling 'MOVED'/'ASK' internal in this lib.
 
-##Note
+###Note
 This repo is under construction and 'cause redis 3.0 is unstable,so this repo is unstable too.
