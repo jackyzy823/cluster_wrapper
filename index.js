@@ -45,14 +45,14 @@ function createClient(redisServers) {
     /*client.address ip or domain?*/
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
-      slotsPool[item] = client;
+      slotsPool[item] = client.address;
     });
   });
   /*Set empty slots*/
   var keys = Object.keys(clientsMap);
   var size = keys.length - 1;
   for (var i = 0; i < 16384; i++) {
-    slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]);
+    slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]).address;
   }
   return new clusterClient(clientsMap, slotsPool);
 }
@@ -192,7 +192,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
       });
     } else if (errType == 'MOVED') {
       /*update slots cache after MOVED*/
-      self.slotsPool[dstSlot] = tmpClient;
+      self.slotsPool[dstSlot] = tmpClient.address;
       // console.log("moevd using address", tmpClient.address);
       // console.log('args', args);
       tmpClient[command](args, callback);
@@ -291,19 +291,19 @@ clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, cal
     }
   }
   //now args and callback done;
-  var usedSlots = {};
-  var crcVal;
+  var usedClients = {};
+  var client;
   for (var i = 0, len = args.length; i < len; i += 2) {
-    crcVal = crc16(args[i]);
-    if (usedSlots[crcVal] === undefined) {
-      usedSlots[crcVal] = [args[i], args[i + 1]];
+     client = this.slotsPool[crc16(args[i])];
+    if (usedClients[client] === undefined) {
+      usedClients[client] = [args[i], args[i + 1]];
     } else {
-      usedSlots[crcVal].concat(args[i], args[i + 1]);
+      usedClients[client].concat(args[i], args[i + 1]);
     }
   };
 
-  async.map(Object.keys(usedSlots), function(slot, cb) {
-    self.slotsPool[slot].mget(usedSlots[slot], function(err, reply) {
+  async.map(Object.keys(usedClients), function(client, cb) {
+    self.clientsMap[client].mget(usedClients[client], function(err, reply) {
       cb && cb(err, reply);
       return;
     });
@@ -335,19 +335,19 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
   }
   var self = this;
 
-  var usedSlots = {};
-  var crcVal;
+  var usedClients = {};
+  var client;
   args.forEach(function(key) {
-    crcVal = crc16(key);
-    if (usedSlots[crcVal] === undefined) {
-      usedSlots[crcVal] = [key];
+    client = self.soltsPool[crc16(key)];
+    if (usedClients[client] === undefined) {
+      usedClients[client] = [key];
     } else {
-      usedSlots[crcVal].concat(key);
+      usedClients[client].concat(key);
     }
   });
 
-  async.map(Object.keys(usedSlots), function(slot, cb) {
-    self.slotsPool[slot].mget(usedSlots[slot], function(err, reply) {
+  async.map(Object.keys(usedClients), function(client, cb) {
+    self.clientsMap.mget(usedClients[client], function(err, reply) {
       cb && cb(err, reply);
       return;
     });
