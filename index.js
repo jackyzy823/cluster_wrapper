@@ -4,6 +4,7 @@ var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
 var events = require("events");
 var util = require('util');
+var async = require('async');
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
@@ -12,9 +13,12 @@ function createClient(redisServers) {
     throw new Error('need init configs');
     return null;
   }
-  if(arguments.length == 2){
+  if (arguments.length == 2) {
     /*simple compatible for redis.CreateClient(port,host)*/
-    redisServers = [{port:arguments[0],host:arguments[1]}];
+    redisServers = [{
+      port: arguments[0],
+      host: arguments[1]
+    }];
   }
 
   Array.isArray(redisServers) || (redisServers = [redisServers]);
@@ -63,7 +67,7 @@ function clusterClient(clientsMap, slotsPool) {
   return;
 }
 module.exports.clusterClient = clusterClient;
-    
+
 util.inherits(clusterClient, events.EventEmitter);
 
 /*SHOULD LISTEN EVENTS on every client!*/
@@ -74,7 +78,6 @@ util.inherits(clusterClient, events.EventEmitter);
 //   foreach(clients in clientmap) -> clients.on('xx',function(xx){self.emit('xx')})
 //     });
 // };
-
 
 
 
@@ -253,6 +256,112 @@ clusterClient.prototype.HMSET = clusterClient.prototype.hmset = function(args, c
 
 /*TODO*/
 /*ADD 'EVAL' command*/
+
+
+/*mset usage mset({key1:value1,key2:value2},callback)  
+          or mset([key1,value1,key2,value2],callback)
+          or mset(key1,value1,key2,value2,...,callback)
+*/
+clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, callback) {
+  if (!(Array.isArray(args) && typeof callback === "function")) {
+    args = to_array(arguments);
+    if (typeof args[args.length - 1] === 'function') {
+      callback = args.pop();
+    } else {
+      callback = null;
+    }
+    if (args.length == 1) {
+      if (Array.isArray(args[0])) {
+        args = args[0];
+      } else if (typeof args[0] === 'object') {
+        var k;
+        var tmp = [];
+        for (var t = Object.keys(args[0]), len = t.length, i = 0; i < len; i++) {
+          k = t[i];
+          tmp.push(k);
+          tmp.push(args[0][k]);
+        }
+        // var t = Object.keys(args[0]).map(function(k){tmp.push(k);tmp.push(args[0]][k]);});
+        args = tmp;
+      } else {
+        throw new Error('args type not support');
+      }
+    } else if (!!(args.length & 1)) {
+      throw new Error('args key-value should be even');
+    }
+  }
+  //now args and callback done;
+  var usedSlots = {};
+  var crcVal;
+  for (var i = 0, len = args.length; i < len; i += 2) {
+    crcVal = crc16(args[i]);
+    if (usedSlots[crcVal] === undefined) {
+      usedSlots[crcVal] = [args[i], args[i + 1]];
+    } else {
+      usedSlots[crcVal].concat(args[i], args[i + 1]);
+    }
+  };
+
+  async.map(Object.keys(usedSlots), function(slot, cb) {
+    self.slotsPool[slot].mget(usedSlots[slot], function(err, reply) {
+      cb && cb(err, reply);
+      return;
+    });
+  }, function(err, results) {
+    if (err) {
+      callback && callback(err, null);
+      return;
+    }
+    //results like ['OK','OK','OK']
+    // so just return 1 ok;
+    callback && callback(err, results[0]);
+  });
+
+}
+
+clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, callback) {
+  /* the judgement may be broken? */
+  if (!(Array.isArray(args) && typeof callback === "function")) {
+    args = to_array(arguments);
+    callback = null;
+  }
+  var self = this;
+
+  var usedSlots = {};
+  var crcVal;
+  args.forEach(function(key) {
+    crcVal = crc16(key);
+    if (usedSlots[crcVal] === undefined) {
+      usedSlots[crcVal] = [key];
+    } else {
+      usedSlots[crcVal].concat(key);
+    }
+  });
+
+  async.map(Object.keys(usedSlots), function(slot, cb) {
+    self.slotsPool[slot].mget(usedSlots[slot], function(err, reply) {
+      cb && cb(err, reply);
+      return;
+    });
+  }, function(err, results) {
+    if (err) {
+      callback && callback(err, null);
+      return;
+    }
+    // for now result likes [[a,b],[c],[d,e]];
+    var realResult = results.reduce(function(pre, cur) {
+      pre.concat(cur)
+    }, []);
+
+    callback && callback(err, realResult);
+  });
+}
+
+
+clusterClient.prototype.MSETNX = clusterClient.prototype.msetnx = function(args, callback) {
+  throw new Error("because of atomic ,this command will never implement .");
+}
+
 
 /*Imply asking if node_redis not imply*/
 if (!Redis.RedisClient.prototype.asking) {
