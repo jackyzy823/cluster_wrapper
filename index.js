@@ -318,12 +318,20 @@ clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, cal
   });
 
 }
-
+/*
+ * mget usage mget([key1,key2,key3],callback)
+ *         or mget(key1,key2,key3,callback)
+ *      returns err,resultArray
+ * */
 clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, callback) {
   /* the judgement may be broken? */
   if (!(Array.isArray(args) && typeof callback === "function")) {
     args = to_array(arguments);
-    callback = null;
+    if(typeof args[args.length - 1] === "function") {
+      callback = args.pop();
+    } else {
+      callback = null;
+    }
   }
   var self = this;
 
