@@ -356,7 +356,6 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
     }
   );
 
-
   /* each iteration contains keys in same slot to avoid crosssolt error!!*/
   async.map(Object.keys(usedSlots), function(slot, cb) {
     /* cluset.send_command will handle MOVED for slots*/
@@ -370,6 +369,8 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
       return;
     }
     // for now result likes [[a,b],[c],[d,e]];
+    /* TO FIX: attention current order is not guarantee!*/
+    console.log('result', results);
     var realResult = results.reduce(function(pre, cur) {
       return pre.concat(cur);
     }, []);
