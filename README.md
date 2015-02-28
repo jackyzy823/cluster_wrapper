@@ -16,5 +16,9 @@ redis.set('msg','1234',function(err,reply){
 ```
 Works the same as [node_redis](https://github.com/mranney/node_redis),Handling 'MOVED'/'ASK' internal in this lib.
 
+##Feature
+ * support MGET/MSET (Except MSETNX)
+
+
 ##Note
 This repo is under construction and 'cause redis 3.0 is unstable,so this repo is unstable too.
