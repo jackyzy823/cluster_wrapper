@@ -10,7 +10,8 @@
   "author": "jackyzy823 <jackyzy823@gmail.com>",
   "main": "./index.js",
   "scripts": {
-    "test": "node ./tests/cluster.test.js"
+    "test":"node ./tests/crc.test.js && node ./tests/slot_parser.test.js",
+    "redis-test": "node ./tests/cluster.test.js"
   },
   "dependencies":{
     "redis":"~0.12.1",

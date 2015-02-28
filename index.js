@@ -1,5 +1,5 @@
 var Redis = require('redis');
-var crc16 = require('./lib/crc16.js');
+var slotHash = require('./lib/slot_hash.js');
 var parseSlots = require('./lib/slot_parser.js');
 var to_array = require("./lib/to_array");
 var events = require("events");
@@ -160,7 +160,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
   if (!callback && (typeof args[args.length - 1] == 'function' || typeof args[args.length - 1] == 'undefined')) {
     callback = args.pop();
   }
-  var client = this.slotsPool[crc16(key)];
+  var client = this.slotsPool[slotHash(key)];
   // console.log('current slot first use port', client.connectionOption.port);
   // client[command]
   client.send_command(command, args, function wrapCallback(err, reply) {
@@ -302,7 +302,7 @@ clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, cal
     var usedSlots = {};
     var crcVal;
     for (var i = 0, len = args.length; i < len; i += 2) {
-      crcVal = crc16(args[i]);
+      crcVal = slotHash(args[i]);
       if (usedSlots[crcVal] === undefined) {
         usedSlots[crcVal] = [args[i], args[i + 1]];
       } else {
@@ -347,7 +347,7 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
   var crcVal;
   args.forEach(
     function(key) {
-      crcVal = crc16(key);
+      crcVal = slotHash(key);
       if (usedSlots[crcVal] === undefined) {
         usedSlots[crcVal] = [key];
       } else {

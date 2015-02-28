@@ -18,6 +18,7 @@ Works the same as [node_redis](https://github.com/mranney/node_redis),Handling '
 
 ##Feature
  * support MGET/MSET (Except MSETNX)
+ * support [hash tags](http://redis.io/topics/cluster-spec#implemented-subset)
 
 
 ##Note
