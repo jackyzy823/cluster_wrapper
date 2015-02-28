@@ -45,15 +45,23 @@ function createClient(redisServers) {
     /*client.address ip or domain?*/
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
-      slotsPool[item] = client.address;
+      slotsPool[item] = client;
     });
   });
   /*Set empty slots*/
   var keys = Object.keys(clientsMap);
   var size = keys.length - 1;
   for (var i = 0; i < 16384; i++) {
-    slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]).address;
+    slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]);
   }
+  /*
+  clientsMap client.address -> redisClient.Object
+  slotsPool slotsNumber - > client.address[now]
+             slotsNumber -> redisClient.Object [prev]
+      so which one use less memeory? may be Object -> so revert to prev version
+  */
+
+
   return new clusterClient(clientsMap, slotsPool);
 }
 
@@ -142,6 +150,10 @@ clusterClient.prototype.send_command = function(command, args, callback) {
   //
   // process command and arguments and callback accroding to RedisClient.prototype.send_command
   //
+
+  // for now 
+  // in mget all args are keys ,but they have same crc value
+  // in mset all even(0,2,4...) args are keys , and they have same crc value
   var key = args[0];
   // console.log('keys', key);
   /*typeof args[args.length - 1] == 'undefined' accroding to RedisClient.prototype.send_command*/
@@ -150,16 +162,12 @@ clusterClient.prototype.send_command = function(command, args, callback) {
   }
   var client = this.slotsPool[crc16(key)];
   // console.log('current slot first use port', client.connectionOption.port);
-  client[command](args, function wrapCallback(err, reply) {
+  // client[command]
+  client.send_command(command, args, function wrapCallback(err, reply) {
     var tmpClient = null;
 
-    /*DEBUG ONLY*/
-    self.DebugError = err;
-    self.DebugReply = reply;
-    /*DEBUG ONLY*/
-
-    var errType = null,
-      errMsg = null;
+    var errType = null;
+    var errMsg = null;
     err && (errType = err.message.split(' ')[0]);
     err && (errMsg = err.message.split(' ').splice(1).join(' '));
     /*MOVED will update slotsmap and ASK will not ,as described in cluster-spec*/
@@ -192,7 +200,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
       });
     } else if (errType == 'MOVED') {
       /*update slots cache after MOVED*/
-      self.slotsPool[dstSlot] = tmpClient.address;
+      self.slotsPool[dstSlot] = tmpClient;
       // console.log("moevd using address", tmpClient.address);
       // console.log('args', args);
       tmpClient[command](args, callback);
@@ -263,71 +271,71 @@ clusterClient.prototype.HMSET = clusterClient.prototype.hmset = function(args, c
           or mset(key1,value1,key2,value2,...,callback)
 */
 clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, callback) {
-  if (!(Array.isArray(args) && typeof callback === "function")) {
-    args = to_array(arguments);
-    if (typeof args[args.length - 1] === 'function') {
-      callback = args.pop();
-    } else {
-      callback = null;
-    }
-    if (args.length == 1) {
-      if (Array.isArray(args[0])) {
-        args = args[0];
-      } else if (typeof args[0] === 'object') {
-        var k;
-        var tmp = [];
-        for (var t = Object.keys(args[0]), len = t.length, i = 0; i < len; i++) {
-          k = t[i];
-          tmp.push(k);
-          tmp.push(args[0][k]);
-        }
-        // var t = Object.keys(args[0]).map(function(k){tmp.push(k);tmp.push(args[0]][k]);});
-        args = tmp;
+    if (!(Array.isArray(args) && typeof callback === "function")) {
+      args = to_array(arguments);
+      if (typeof args[args.length - 1] === 'function') {
+        callback = args.pop();
       } else {
-        throw new Error('args type not support');
+        callback = null;
       }
-    } else if (!!(args.length & 1)) {
-      throw new Error('args key-value should be even');
+      if (args.length == 1) {
+        if (Array.isArray(args[0])) {
+          args = args[0];
+        } else if (typeof args[0] === 'object') {
+          var k;
+          var tmp = [];
+          for (var t = Object.keys(args[0]), len = t.length, i = 0; i < len; i++) {
+            k = t[i];
+            tmp.push(k);
+            tmp.push(args[0][k]);
+          }
+          // var t = Object.keys(args[0]).map(function(k){tmp.push(k);tmp.push(args[0]][k]);});
+          args = tmp;
+        } else {
+          throw new Error('args type not support');
+        }
+      } else if (!!(args.length & 1)) {
+        throw new Error('args key-value should be even');
+      }
     }
-  }
-  //now args and callback done;
-  var usedClients = {};
-  var client;
-  for (var i = 0, len = args.length; i < len; i += 2) {
-     client = this.slotsPool[crc16(args[i])];
-    if (usedClients[client] === undefined) {
-      usedClients[client] = [args[i], args[i + 1]];
-    } else {
-      usedClients[client].concat(args[i], args[i + 1]);
-    }
-  };
-
-  async.map(Object.keys(usedClients), function(client, cb) {
-    self.clientsMap[client].mget(usedClients[client], function(err, reply) {
-      cb && cb(err, reply);
-      return;
+    //now args and callback done;
+    var usedSlots = {};
+    var crcVal;
+    for (var i = 0, len = args.length; i < len; i += 2) {
+      crcVal = crc16(args[i]);
+      if (usedSlots[crcVal] === undefined) {
+        usedSlots[crcVal] = [args[i], args[i + 1]];
+      } else {
+        usedSlots[crcVal].concat(args[i], args[i + 1]);
+      }
+    };
+    var self = this;
+    async.map(Object.keys(usedSlots), function(slot, cb) {
+      self.send_command('mset', usedSlots[slot], function(err, reply) {
+        cb && cb(err, reply);
+        return;
+      });
+    }, function(err, results) {
+      if (err) {
+        callback && callback(err, null);
+        return;
+      }
+      //results like ['OK','OK','OK']
+      // so just return 1 ok;
+      callback && callback(err, results[0]);
     });
-  }, function(err, results) {
-    if (err) {
-      callback && callback(err, null);
-      return;
-    }
-    //results like ['OK','OK','OK']
-    // so just return 1 ok;
-    callback && callback(err, results[0]);
-  });
 
-}
-/*
- * mget usage mget([key1,key2,key3],callback)
- *         or mget(key1,key2,key3,callback)
- *      returns err,resultArray
- * */
+  }
+  /*
+   * mget usage mget([key1,key2,key3],callback)
+   *         or mget(key1,key2,key3,callback)
+   *      returns err,resultArray
+   * */
 clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, callback) {
   /* the judgement may be broken? */
   if (!(Array.isArray(args) && typeof callback === "function")) {
     args = to_array(arguments);
-    if(typeof args[args.length - 1] === "function") {
+    if (typeof args[args.length - 1] === "function") {
       callback = args.pop();
     } else {
       callback = null;
@@ -335,19 +343,24 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
   }
   var self = this;
 
-  var usedClients = {};
-  var client;
-  args.forEach(function(key) {
-    client = self.soltsPool[crc16(key)];
-    if (usedClients[client] === undefined) {
-      usedClients[client] = [key];
-    } else {
-      usedClients[client].concat(key);
+  var usedSlots = {};
+  var crcVal;
+  args.forEach(
+    function(key) {
+      crcVal = crc16(key);
+      if (usedSlots[crcVal] === undefined) {
+        usedSlots[crcVal] = [key];
+      } else {
+        usedSlots[crcVal].concat(key);
+      }
     }
-  });
+  );
 
-  async.map(Object.keys(usedClients), function(client, cb) {
-    self.clientsMap.mget(usedClients[client], function(err, reply) {
+
+  /* each iteration contains keys in same slot to avoid crosssolt error!!*/
+  async.map(Object.keys(usedSlots), function(slot, cb) {
+    /* cluset.send_command will handle MOVED for slots*/
+    self.send_command('mget', usedSlots[slot], function(err, reply) {
       cb && cb(err, reply);
       return;
     });
@@ -358,7 +371,7 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
     }
     // for now result likes [[a,b],[c],[d,e]];
     var realResult = results.reduce(function(pre, cur) {
-      pre.concat(cur)
+      return pre.concat(cur);
     }, []);
 
     callback && callback(err, realResult);

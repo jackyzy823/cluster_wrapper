@@ -1,3 +1,4 @@
+var assert = require('assert');
 var config = [{
     port: 30001,
     slots: '0~3276'
@@ -18,10 +19,21 @@ var cluster = require('./../index.js');
 var redis = cluster.createClient(config);
 
 redis.set('msg', '1234', function(err, reply) {
-  redis.get('msg', function(err, reply) {
-    console.log(reply);
-    return;
-  })
+    redis.get('msg', function(err, reply) {
+        console.log(reply);
+        return;
+    });
+});
+
+redis.mset({
+    'key1': 'value1',
+    'key10': 'value2'
+}, function(err, reply) {
+    console.log('mset', err, 'res', reply);
+    redis.mget(['key1', 'key10'], function(err, reply) {
+        console.log('mget', err, 'res', reply);
+        return
+    });
 });
 
 
