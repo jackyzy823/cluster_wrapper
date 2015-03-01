@@ -306,7 +306,7 @@ clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, cal
       if (usedSlots[crcVal] === undefined) {
         usedSlots[crcVal] = [args[i], args[i + 1]];
       } else {
-        usedSlots[crcVal].concat(args[i], args[i + 1]);
+        usedSlots[crcVal].push(args[i], args[i + 1]);
       }
     };
     var self = this;
@@ -342,25 +342,35 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
     }
   }
   var self = this;
-
+  // {slot0:{key:[srcIndex,srcIndex]}} 
+  //        may duplicated keys so index in  array
   var usedSlots = {};
   var crcVal;
   args.forEach(
-    function(key) {
+    function(key, index) {
       crcVal = slotHash(key);
       if (usedSlots[crcVal] === undefined) {
-        usedSlots[crcVal] = [key];
+        usedSlots[crcVal] = {};
+      }
+      if (usedSlots[crcVal][key] === undefined) {
+        usedSlots[crcVal][key] = [index];
       } else {
-        usedSlots[crcVal].concat(key);
+        usedSlots[crcVal][key].push(index);
       }
     }
   );
 
+  var slotKeys = Object.keys(usedSlots);
   /* each iteration contains keys in same slot to avoid crosssolt error!!*/
-  async.map(Object.keys(usedSlots), function(slot, cb) {
+  async.map(slotKeys, function(slot, cb) {
     /* cluset.send_command will handle MOVED for slots*/
-    self.send_command('mget', usedSlots[slot], function(err, reply) {
-      cb && cb(err, reply);
+    var keys = Object.keys(usedSlots[slot]);
+    self.send_command('mget', keys, function(err, reply) {
+      var res = {};
+      reply.forEach(function(item, index) {
+        res[keys[index]] = item;
+      })
+      cb && cb(err, res);
       return;
     });
   }, function(err, results) {
@@ -368,12 +378,19 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
       callback && callback(err, null);
       return;
     }
-    // for now result likes [[a,b],[c],[d,e]];
-    /* TO FIX: attention current order is not guarantee!*/
-    console.log('result', results);
-    var realResult = results.reduce(function(pre, cur) {
-      return pre.concat(cur);
-    }, []);
+    /* FIXED: attention current order is not guarantee!  */
+    /*                    slot0                 slot1    */
+    /* results -> [{key1:value1,key2:value2},{key3:null}]*/
+    var realResult = [];
+    results.forEach(function(item, index) {
+      var curSlot = usedSlots[slotKeys[index]];
+      Object.keys(item).forEach(function(key) {
+        curSlot[key].forEach(function(i) {
+          realResult[i] = item[key];
+        });
+      });
+    });
+
 
     callback && callback(err, realResult);
   });
