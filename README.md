@@ -20,6 +20,9 @@ Works the same as [node_redis](https://github.com/mranney/node_redis),Handling '
  * support MGET/MSET (Except MSETNX)
  * support [hash tags](http://redis.io/topics/cluster-spec#implemented-subset)
 
+##TODO
+ * handle more redis cluster error like [CROSSSLOT/TRYAGAIN/CLUSTERDOWN]
+
 
 ##Note
-This repo is under construction and 'cause redis 3.0 is unstable,so this repo is unstable too.
+This repo is under construction and unstable, since redis 3.0 is unstable too.
