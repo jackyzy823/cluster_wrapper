@@ -10,15 +10,14 @@
   "author": "jackyzy823 <jackyzy823@gmail.com>",
   "main": "./index.js",
   "scripts": {
-    "test": "node ./tests/hash.test.js && node ./tests/slot_parser.test.js",
-    "redis-test": "node ./tests/cluster.test.js"
+    "test": "cd tests && make"
   },
   "dependencies": {
     "redis": "~0.12.1",
     "async": "~0.9"
   },
   "devDependencies": {
-    "mocha": "~2.1",
+    "mocha": "~2.1"
   },
   "repository": {
     "type": "git",

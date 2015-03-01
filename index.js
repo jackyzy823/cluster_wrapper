@@ -118,8 +118,9 @@ commands.forEach(function(fullCommand) {
   var command = fullCommand.split(' ')[0];
   /*see redis-rb-cluster Line:131*/
   /*Add 'select' as described in redis cluster document*/
-  if (command in ['info', 'multi', 'exec', 'slaveof', 'config', 'shutdown', 'select']) {
+  if (['info', 'multi', 'exec', 'slaveof', 'config', 'shutdown', 'select'].indexOf(command) != -1) {
     clusterClient.prototype[command] = function(args, callback) {
+      /*should just throw error instead of return err in callback?*/
       if (Array.isArray(args) && typeof callback === "function") {
         callback(new Error(command, ' is not support in cluster mode'));
         return;

@@ -21,8 +21,9 @@ Works the same as [node_redis](https://github.com/mranney/node_redis),Handling '
  * support [hash tags](http://redis.io/topics/cluster-spec#implemented-subset)
 
 ##TODO
+ * handle all clients event internally and emit nesscary events to user
  * handle more redis cluster error like [CROSSSLOT/TRYAGAIN/CLUSTERDOWN]
-
+ * add more test cases
 
 ##Note
 This repo is under construction and unstable, since redis 3.0 is unstable too.
