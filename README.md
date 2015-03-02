@@ -25,5 +25,15 @@ Works the same as [node_redis](https://github.com/mranney/node_redis),Handling '
  * handle more redis cluster error like [CROSSSLOT/TRYAGAIN/CLUSTERDOWN]
  * add more test cases
 
+##commands not support
+ * info
+ * multi
+ * exec
+ * slaveof
+ * config
+ * shutdown
+ * select
+ * msetnx
+
 ##Note
 This repo is under construction and unstable, since redis 3.0 is unstable too.
