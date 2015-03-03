@@ -323,7 +323,7 @@ clusterClient.prototype.MSET = clusterClient.prototype.mset = function(args, cal
       }
       //results like ['OK','OK','OK']
       // so just return 1 ok;
-      callback && callback(err, results[0]);
+      callback && callback(null, results[0]);
     });
 
   }
@@ -393,10 +393,57 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
     });
 
 
-    callback && callback(err, realResult);
+    callback && callback(null, realResult);
   });
 }
 
+clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callback) {
+  /* the judgement may be broken? */
+  if (!(Array.isArray(args) && typeof callback === "function")) {
+    args = to_array(arguments);
+    if (typeof args[args.length - 1] === "function") {
+      callback = args.pop();
+    } else {
+      callback = null;
+    }
+  }
+  var self = this;
+  // {slot0:{key:[srcIndex,srcIndex]}} 
+  //        may duplicated keys so index in  array
+  var usedSlots = {};
+  var crcVal;
+  args.forEach(
+    function(key) {
+      crcVal = slotHash(key);
+      if (usedSlots[crcVal] === undefined) {
+        usedSlots[crcVal] = [key];
+      } else {
+        usedSlots[crcVal].concat(key);
+      }
+    }
+  );
+
+
+  /* each iteration contains keys in same slot to avoid crosssolt error!!*/
+  async.map(Object.keys(usedSlots), function(slot, cb) {
+    /* cluset.send_command will handle MOVED for slots*/
+    self.send_command('del', usedSlots[slot], function(err, reply) {
+      cb && cb(err, reply);
+      return;
+    });
+  }, function(err, results) {
+    if (err) {
+      callback && callback(err, null);
+      return;
+    }
+    // for now result likes [[a,b],[c],[d,e]];
+    var realResult = results.reduce(function(pre, cur) {
+      return pre + cur;
+    }, 0);
+
+    callback && callback(null, realResult);
+  });
+}
 
 clusterClient.prototype.MSETNX = clusterClient.prototype.msetnx = function(args, callback) {
   throw new Error("because of atomic ,this command will never implement .");

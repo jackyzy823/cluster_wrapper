@@ -13,5 +13,11 @@ describe('slot hash should return right crc value', function() {
   });
   it('hash tags', function() {
     assert.equal(slotHash('{123}.testa'), slotHash('{123}.testb'));
+    assert.notEqual(slotHash('{123.45}'),slotHash('{123.56}'));
+    assert.equal(slotHash('{123'),slotHash('{123'));
+    assert.equal(slotHash('{123}'),slotHash('123'));  //key -> 123
+    assert.notEqual(slotHash('123}'),slotHash('{123')); 
+    assert.equal(slotHash('{123}{'),slotHash('{123}}')); //key -> 123
+    assert.equal(slotHash('{{123}}222'),slotHash('{{123}111')); //key -> {123
   });
-})
+});
