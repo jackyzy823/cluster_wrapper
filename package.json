@@ -1,6 +1,6 @@
 {
   "name": "cluster_wrapper",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Redis cluster wrapper for node_redis",
   "keywords": [
     "redis",
