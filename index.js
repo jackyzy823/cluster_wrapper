@@ -398,7 +398,6 @@ clusterClient.prototype.MGET = clusterClient.prototype.mget = function(args, cal
 }
 
 clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callback) {
-  /* the judgement may be broken? */
   if (!(Array.isArray(args) && typeof callback === "function")) {
     args = to_array(arguments);
     if (typeof args[args.length - 1] === "function") {
@@ -408,8 +407,7 @@ clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callb
     }
   }
   var self = this;
-  // {slot0:{key:[srcIndex,srcIndex]}} 
-  //        may duplicated keys so index in  array
+
   var usedSlots = {};
   var crcVal;
   args.forEach(
@@ -426,7 +424,6 @@ clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callb
 
   /* each iteration contains keys in same slot to avoid crosssolt error!!*/
   async.map(Object.keys(usedSlots), function(slot, cb) {
-    /* cluset.send_command will handle MOVED for slots*/
     self.send_command('del', usedSlots[slot], function(err, reply) {
       cb && cb(err, reply);
       return;
@@ -436,7 +433,6 @@ clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callb
       callback && callback(err, null);
       return;
     }
-    // for now result likes [[a,b],[c],[d,e]];
     var realResult = results.reduce(function(pre, cur) {
       return pre + cur;
     }, 0);
