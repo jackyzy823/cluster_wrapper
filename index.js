@@ -13,11 +13,29 @@ function createClient(redisServers) {
     throw new Error('need init configs');
     return null;
   }
-  if (arguments.length == 2) {
-    /*simple compatible for redis.CreateClient(port,host)*/
+  /*simple compatible for redis.CreateClient(port,host,options)*/
+  /*current not support socket*/
+  if (arguments.length == 1 && typeof arguments[0] == 'number') {
+    redisServers = [{
+      port: arguments[0]
+    }]
+  } else if (arguments.length == 2) {
+    if (typeof arguments[1] == 'object') {
+      redisServers = [{
+        port: arguments[0],
+        options: arguments[1]
+      }];
+    } else {
+      redisServers = [{
+        port: arguments[0],
+        host: arguments[1]
+      }];
+    }
+  } else if (arguments.length == 3) {
     redisServers = [{
       port: arguments[0],
-      host: arguments[1]
+      host: arguments[1],
+      options: arguments[2]
     }];
   }
 
@@ -28,17 +46,18 @@ function createClient(redisServers) {
   var client = null;
   redisServers.forEach(function(server) {
     var host = server.host || '127.0.0.1';
-    if (!server.port) {
+    if (!server.port || typeof server.port != 'number' || server.port % 1 !== 0 || server.port > 65536 || server.port < 0) {
       console.log(server);
-      throw new Error('port should be defined!');
+      throw new Error('port should be defined or 0~65535 integer!');
     }
     var port = server.port;
+    var options = server.options || null;
     var slots = parseSlots(server.slots);
     /*TODO*/
     /*client should be compatible with node_redis */
     /*What if cluster is offline after init?*/
     /*Not described in redis cluster spec*/
-    client = Redis.createClient(port, host);
+    client = Redis.createClient(port, host, options);
     // client.on('error',function(msg){
 
     // })
