@@ -90,6 +90,7 @@ function clusterClient(clientsMap, slotsPool) {
   this.clientsMap = clientsMap;
   this.slotsPool = slotsPool;
   //install listener on each clients
+  this.install_listeners();
   events.EventEmitter.call(this);
   return;
 }
@@ -106,7 +107,43 @@ util.inherits(clusterClient, events.EventEmitter);
 //     });
 // };
 
-
+clusterClient.prototype.install_listeners = function(){
+  var self = this;
+  for (var clientAddr in this.clientsMap) {
+    var client = this.clientsMap[clientAddr];
+    client.on('error', function(msg) {
+      self.emit('error', msg, clientAddr); // emit error msg with "client address info"
+    });
+    client.on('ready', function() {
+      self.emit('ready', clientAddr);
+    });
+    client.on('drain', function() {
+      self.emit('drain', clientAddr);
+    });
+    client.on('end', function() {
+      //may do more in here ,cause one client  gone,the cluster wont work.
+      self.emit('end', clientAddr);
+    });
+    client.on('reconnecting', function(msg) {
+      self.emit('reconnecting', msg, clientAddr);
+    });
+    client.on('idle', function() {
+      self.emit('idle', clientAddr);
+    });
+    client.on('message', function(channel, msg) {
+      self.emit('message', channel, msg, clientAddr);
+    });
+    client.on('pmessage', function(pattern, channel, msg) {
+      self.emit('pmessage', pattern, channel, msg, clientAddr);
+    });
+    client.on('monitor', function(timestamp, args) {
+      self.emit('monitor', timestamp, args, clientAddr);
+    });
+    client.on('connect', function() {
+      self.emit('connect', clientAddr);
+    });
+  }
+}
 
 //copy from node_redis/index.js
 function set_union(seta, setb) {
