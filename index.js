@@ -8,6 +8,9 @@ var async = require('async');
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
+// clientsMap = {'ip+port':client_obj}
+// client_obj -> redis_client and redis_client.slots = [slot_num1,slot_numX]
+// slotsPool -> [client_obj1,client_objx,client_obj1 ,client_objXX ...] (len:16384)
 function createClient(redisServers) {
   if (!redisServers) {
     throw new Error('need init configs');
@@ -18,7 +21,7 @@ function createClient(redisServers) {
   if (arguments.length == 1 && typeof arguments[0] == 'number') {
     redisServers = [{
       port: arguments[0]
-    }]
+    }];
   } else if (arguments.length == 2) {
     if (typeof arguments[1] == 'object') {
       redisServers = [{
@@ -65,13 +68,27 @@ function createClient(redisServers) {
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
       slotsPool[item] = client;
+      if (!client.slots) {
+        clients.slots = [item];
+      } else {
+        clients.slots.push(item);
+      }
     });
   });
   /*Set empty slots*/
   var keys = Object.keys(clientsMap);
   var size = keys.length - 1;
   for (var i = 0; i < 16384; i++) {
-    slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]);
+    if (!slotsPool[i]) {
+      var c = keys[Math.random() * size | 0];
+      slotsPool[i] = clientsMap[c];
+      if (!clientsMap[c].slots) {
+        clientsMap[c].slots = [i];
+      } else {
+        clientsMap[c].slots.push(i);
+      }
+    }
+    // slotsPool[i] || (slotsPool[i] = clientsMap[keys[Math.random() * size >> 0]]);
   }
   /*
   clientsMap client.address -> redisClient.Object
@@ -107,7 +124,7 @@ util.inherits(clusterClient, events.EventEmitter);
 //     });
 // };
 
-clusterClient.prototype.install_listeners = function(){
+clusterClient.prototype.install_listeners = function() {
   var self = this;
   for (var clientAddr in this.clientsMap) {
     var client = this.clientsMap[clientAddr];
@@ -123,6 +140,17 @@ clusterClient.prototype.install_listeners = function(){
     client.on('end', function() {
       //may do more in here ,cause one client  gone,the cluster wont work.
       self.emit('end', clientAddr);
+      var tempSlots = self.clientsMap[clientAddr].slots;
+      delete self.clientsMap[clientAddr];
+      tempSlots.forEach(function(item) {
+        var c = keys[Math.random() * size | 0];
+        self.slotsPool[item] = self.clientsMap[c]
+        if (!self.clientsMap[c].slots) {
+          self.clientsMap[c].slots = [i];
+        } else {
+          self.clientsMap[c].slots.push(i);
+        }
+      });
     });
     client.on('reconnecting', function(msg) {
       self.emit('reconnecting', msg, clientAddr);
@@ -499,6 +527,52 @@ clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callb
 
 clusterClient.prototype.MSETNX = clusterClient.prototype.msetnx = function(args, callback) {
   throw new Error("because of atomic ,this command will never implement .");
+}
+
+/*UNDERCONSTRUCT*/
+clusterClient.prototype.RENAME = clusterClient.prototype.rename = function(args, callback) {
+  if (!(Array.isArray(args) && typeof callback === "function")) {
+    args = to_array(arguments);
+    if (typeof args[args.length - 1] === "function") {
+      callback = args.pop();
+    } else {
+      callback = null;
+    }
+  }
+  //calc old_key and new_key if they are in same slot
+  if (args.length != 2) {
+    //oops wrong args
+  } else {
+    if (slotHash(args[0]) == slotHash(args[1])) {
+      //same slot
+    } else {
+      //
+
+    }
+  }
+
+}
+
+/*UNDERCONSTRUCT*/
+clusterClient.prototype.RENAMENX = clusterClient.prototype.renamenx = function(args, callback) {
+  if (!(Array.isArray(args) && typeof callback === "function")) {
+    args = to_array(arguments);
+    if (typeof args[args.length - 1] === "function") {
+      callback = args.pop();
+    } else {
+      callback = null;
+    }
+  }
+  //calc old_key and new_key if they are in same slot
+  if (args.length != 2) {
+    //oops wrong args
+  } else {
+    if (slotHash(args[0]) == slotHash(args[1])) {
+
+    } else {
+
+    }
+  }
 }
 
 
