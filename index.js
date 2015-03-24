@@ -541,13 +541,34 @@ clusterClient.prototype.RENAME = clusterClient.prototype.rename = function(args,
   }
   //calc old_key and new_key if they are in same slot
   if (args.length != 2) {
+    callback && callback(new Error('Err wrong number of arguments for \'rename\' command'), null);
+    return;
     //oops wrong args
   } else {
     if (slotHash(args[0]) == slotHash(args[1])) {
       //same slot
+      this.send_command('rename', args, callback);
+      return;
     } else {
-      //
-
+      this.send_command('get', args[0], function(err, reply) {
+        if (err || !reply) {
+          callback && callback(new Error('Err no such key'), null);
+          return;
+        }
+        this.send_command('set', args[1], reply, function(err1, reply1) {
+          if (err1) {
+            callback && callback(err, null);
+            return;
+          }
+          this.send_command('del', args[0], function(err2, reply2) {
+            if (err2) {
+              callback && callback(err, null);
+              return;
+            }
+            callback && callback(null, 'OK');
+          });
+        });
+      });
     }
   }
 
@@ -565,12 +586,41 @@ clusterClient.prototype.RENAMENX = clusterClient.prototype.renamenx = function(a
   }
   //calc old_key and new_key if they are in same slot
   if (args.length != 2) {
+    callback && callback(new Error('Err wrong number of arguments for \'renamenx\' command'), null);
+    return;
     //oops wrong args
   } else {
     if (slotHash(args[0]) == slotHash(args[1])) {
-
+      //same slot
+      this.send_command('renamenx', args, callback);
+      return;
     } else {
-
+      this.send_command('get', args[0], function(err, reply) {
+        if (err || !reply) {
+          callback && callback(new Error('Err no such key'), null);
+          return;
+        }
+        this.send_command('setnx', args[1], reply, function(err1, reply1) {
+          if (err1) {
+            callback && callback(err, null);
+            return;
+          }
+          if (reply1 == 0) {
+            //set newkey already exists
+            callback && callback(null, 0);
+            return;
+          } else {
+            //so del oldkey
+            this.send_command('del', args[0], function(err2, reply2) {
+              if (err2) {
+                callback && callback(err, null);
+                return;
+              }
+              callback && callback(null, 1);
+            });
+          }
+        });
+      });
     }
   }
 }
