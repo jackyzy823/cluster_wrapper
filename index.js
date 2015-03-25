@@ -5,6 +5,8 @@ var to_array = require("./lib/to_array");
 var events = require("events");
 var util = require('util');
 var async = require('async');
+
+
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
@@ -61,17 +63,19 @@ function createClient(redisServers) {
     /*What if cluster is offline after init?*/
     /*Not described in redis cluster spec*/
     client = Redis.createClient(port, host, options);
-    // client.on('error',function(msg){
-
-    // })
+    // client.on('error', function(msg) {
+    //   self.emit('cluster error', "create cluster failed");
+    //   // self.emit('err',msg);
+    //   // throw new Error('initialize cluster fail!');
+    // });
     /*client.address ip or domain?*/
     clientsMap[client.address] = client;
     slots && slots.forEach(function(item) {
       slotsPool[item] = client;
       if (!client.slots) {
-        clients.slots = [item];
+        client.slots = [item];
       } else {
-        clients.slots.push(item);
+        client.slots.push(item);
       }
     });
   });
@@ -106,6 +110,9 @@ module.exports.createClient = createClient;
 function clusterClient(clientsMap, slotsPool) {
   this.clientsMap = clientsMap;
   this.slotsPool = slotsPool;
+  this.clientsNum = Object.keys(this.clientsMap).length;
+  this.initializedClientNum = 0;
+  this.clustered = false;
   //install listener on each clients
   this.install_listeners();
   events.EventEmitter.call(this);
@@ -127,9 +134,23 @@ util.inherits(clusterClient, events.EventEmitter);
 clusterClient.prototype.install_listeners = function() {
   var self = this;
   for (var clientAddr in this.clientsMap) {
+    console.log(clientAddr);
+    console.log(this.clientsMap[clientAddr].address);
     var client = this.clientsMap[clientAddr];
+    console.log(client.address);
     client.on('error', function(msg) {
-      self.emit('error', msg, clientAddr); // emit error msg with "client address info"
+      // console.log(clientAddr, "error");
+      // console.log('in error', client);
+      if (msg.toString().indexOf(' connect ECONNREFUSED' != -1)) {
+        if (!self.clustered) {
+          self.emit('error', new Error('create cluster fail because ' + msg), clientAddr);
+        } else {
+          console.log('master faildown!');
+        }
+      } else {
+        self.emit('error', msg, clientAddr); // emit error msg with "client address info"
+      }
+
     });
     client.on('ready', function() {
       self.emit('ready', clientAddr);
@@ -138,21 +159,35 @@ clusterClient.prototype.install_listeners = function() {
       self.emit('drain', clientAddr);
     });
     client.on('end', function() {
+      //why i kill 30002 -> then 30003 down?
+      console.log(clientAddr, ' ends');
+      console.log('in end', client);
+      console.log('address', client.address);
       //may do more in here ,cause one client  gone,the cluster wont work.
       self.emit('end', clientAddr);
-      var tempSlots = self.clientsMap[clientAddr].slots;
-      delete self.clientsMap[clientAddr];
-      tempSlots.forEach(function(item) {
-        var c = keys[Math.random() * size | 0];
-        self.slotsPool[item] = self.clientsMap[c]
-        if (!self.clientsMap[c].slots) {
-          self.clientsMap[c].slots = [i];
-        } else {
-          self.clientsMap[c].slots.push(i);
-        }
-      });
+      //else this end caused by error(ECONNREFUSED)
+      if (self.clustered) {
+        var tempSlots = self.clientsMap[clientAddr].slots;
+        delete self.clientsMap[clientAddr];
+        var keys = Object.keys(self.clientsMap);
+        var size = keys.length - 1;
+        tempSlots.forEach(function(item) {
+          var c = keys[Math.random() * size | 0];
+          self.slotsPool[item] = self.clientsMap[c]
+          if (!self.clientsMap[c].slots) {
+            self.clientsMap[c].slots = [item];
+          } else {
+            self.clientsMap[c].slots.push(item);
+          }
+        });
+      }
+      for (var i in self.clientsMap) {
+        console.log(i);
+      }
+      // debugger;
     });
     client.on('reconnecting', function(msg) {
+      //should add this client to clientMap ,need not according config to modify slots,c'z slots may changed when it down.
       self.emit('reconnecting', msg, clientAddr);
     });
     client.on('idle', function() {
@@ -168,6 +203,10 @@ clusterClient.prototype.install_listeners = function() {
       self.emit('monitor', timestamp, args, clientAddr);
     });
     client.on('connect', function() {
+      self.initializedClientNum++;
+      if (self.clientsNum == self.initializedClientNum) {
+        self.clustered = true;
+      }
       self.emit('connect', clientAddr);
     });
   }
@@ -635,4 +674,20 @@ if (!Redis.RedisClient.prototype.asking) {
   clusterClient.prototype.asking = function(callback) {
     return this.send_command('asking', [], callback);
   };
+}
+
+
+if (require.main == module) {
+  var config = [{
+    port: 30001,
+    slots: '0~5460'
+  }, {
+    port: 30002,
+    slots: '5461~10922'
+  }, {
+    port: 30003,
+    slots: '10923~16383'
+  }];
+  var redis = createClient(config);
+
 }
