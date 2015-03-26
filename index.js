@@ -114,7 +114,10 @@ function clusterClient(clientsMap, slotsPool) {
   this.initializedClientNum = 0;
   this.clustered = false;
   //install listener on each clients
-  this.install_listeners();
+  for(var clientAddr in this.clientsMap){
+    this.install_listeners(clientAddr);
+  }
+  //this.install_listeners();
   events.EventEmitter.call(this);
   return;
 }
@@ -131,85 +134,72 @@ util.inherits(clusterClient, events.EventEmitter);
 //     });
 // };
 
-clusterClient.prototype.install_listeners = function() {
+clusterClient.prototype.install_listeners = function(clientAddr) {
   var self = this;
-  for (var clientAddr in this.clientsMap) {
-    console.log(clientAddr);
-    console.log(this.clientsMap[clientAddr].address);
-    var client = this.clientsMap[clientAddr];
-    console.log(client.address);
-    client.on('error', function(msg) {
-      // console.log(clientAddr, "error");
-      // console.log('in error', client);
-      if (msg.toString().indexOf(' connect ECONNREFUSED' != -1)) {
-        if (!self.clustered) {
-          self.emit('error', new Error('create cluster fail because ' + msg), clientAddr);
-        } else {
-          console.log('master faildown!');
-        }
+  var client = this.clientsMap[clientAddr];
+  client.on('error', function(msg) {
+    if (msg.toString().indexOf(' connect ECONNREFUSED' != -1)) {
+      if (!self.clustered) {
+        self.emit('error', new Error('create cluster fail because ' + msg), clientAddr);
       } else {
-        self.emit('error', msg, clientAddr); // emit error msg with "client address info"
+        console.log('master faildown!');
       }
+    } else {
+      self.emit('error', msg, clientAddr); // emit error msg with "client address info"
+    }
 
-    });
-    client.on('ready', function() {
-      self.emit('ready', clientAddr);
-    });
-    client.on('drain', function() {
-      self.emit('drain', clientAddr);
-    });
-    client.on('end', function() {
-      //why i kill 30002 -> then 30003 down?
-      console.log(clientAddr, ' ends');
-      console.log('in end', client);
-      console.log('address', client.address);
-      //may do more in here ,cause one client  gone,the cluster wont work.
-      self.emit('end', clientAddr);
-      //else this end caused by error(ECONNREFUSED)
-      if (self.clustered) {
-        var tempSlots = self.clientsMap[clientAddr].slots;
-        delete self.clientsMap[clientAddr];
-        var keys = Object.keys(self.clientsMap);
-        var size = keys.length - 1;
-        tempSlots.forEach(function(item) {
-          var c = keys[Math.random() * size | 0];
-          self.slotsPool[item] = self.clientsMap[c]
-          if (!self.clientsMap[c].slots) {
-            self.clientsMap[c].slots = [item];
-          } else {
-            self.clientsMap[c].slots.push(item);
-          }
-        });
-      }
-      for (var i in self.clientsMap) {
-        console.log(i);
-      }
-      // debugger;
-    });
-    client.on('reconnecting', function(msg) {
-      //should add this client to clientMap ,need not according config to modify slots,c'z slots may changed when it down.
-      self.emit('reconnecting', msg, clientAddr);
-    });
-    client.on('idle', function() {
-      self.emit('idle', clientAddr);
-    });
-    client.on('message', function(channel, msg) {
-      self.emit('message', channel, msg, clientAddr);
-    });
-    client.on('pmessage', function(pattern, channel, msg) {
-      self.emit('pmessage', pattern, channel, msg, clientAddr);
-    });
-    client.on('monitor', function(timestamp, args) {
-      self.emit('monitor', timestamp, args, clientAddr);
-    });
-    client.on('connect', function() {
-      self.initializedClientNum++;
-      if (self.clientsNum == self.initializedClientNum) {
-        self.clustered = true;
-      }
-      self.emit('connect', clientAddr);
-    });
-  }
+  });
+  client.on('ready', function() {
+    self.emit('ready', clientAddr);
+  });
+  client.on('drain', function() {
+    self.emit('drain', clientAddr);
+  });
+  client.on('end', function() {
+    //may do more in here ,cause one client  gone,the cluster wont work.
+    self.emit('end', clientAddr);
+    //else this end caused by error(ECONNREFUSED)
+    if (self.clustered) {
+      var tempSlots = self.clientsMap[clientAddr].slots;
+      delete self.clientsMap[clientAddr];
+      var keys = Object.keys(self.clientsMap);
+      var size = keys.length - 1;
+      tempSlots.forEach(function(item) {
+        var c = keys[Math.random() * size | 0];
+        self.slotsPool[item] = self.clientsMap[c]
+        if (!self.clientsMap[c].slots) {
+          self.clientsMap[c].slots = [item];
+        } else {
+          self.clientsMap[c].slots.push(item);
+        }
+      });
+    }
+    // debugger;
+  });
+  client.on('reconnecting', function(msg) {
+    //should add this client to clientMap ,need not according config to modify slots,c'z slots may changed when it down.
+    self.emit('reconnecting', msg, clientAddr);
+  });
+  client.on('idle', function() {
+    self.emit('idle', clientAddr);
+  });
+  client.on('message', function(channel, msg) {
+    self.emit('message', channel, msg, clientAddr);
+  });
+  client.on('pmessage', function(pattern, channel, msg) {
+    self.emit('pmessage', pattern, channel, msg, clientAddr);
+  });
+  client.on('monitor', function(timestamp, args) {
+    self.emit('monitor', timestamp, args, clientAddr);
+  });
+  client.on('connect', function() {
+    self.initializedClientNum++;
+    //may reconnect
+    if (!self.clustered && self.clientsNum == self.initializedClientNum) {
+      self.clustered = true;
+    }
+    self.emit('connect', clientAddr);
+  });
 }
 
 //copy from node_redis/index.js
