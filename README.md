@@ -19,12 +19,12 @@ Works the same as [node_redis](https://github.com/mranney/node_redis),Handling '
 ##Feature
  * support MGET/MSET (Except MSETNX)
  * support [hash tags](http://redis.io/topics/cluster-spec#implemented-subset)
+ * implement RENAME/RENAMENX  with [GET-SET/SETNX-DEL]  if key and newkey not in same slot.
 
 ##TODO
  * handle all clients event internally and emit nesscary events to user
  * handle more redis cluster error like [CROSSSLOT/TRYAGAIN/CLUSTERDOWN]
  * add more test cases
- * implement RENAME/RENAMENX  with [GET-SET/SETNX-DEL]  if key and newkey not in same slot.
  
 ##commands not support
  * info

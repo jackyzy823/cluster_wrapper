@@ -233,16 +233,16 @@ commands.forEach(function(fullCommand) {
   var command = fullCommand.split(' ')[0];
   /*see redis-rb-cluster Line:131*/
   /*Add 'select' as described in redis cluster document*/
-  if (['info', 'multi', 'exec', 'slaveof', 'config', 'shutdown', 'select'].indexOf(command) != -1) {
+  if (['info', 'multi', 'exec', 'slaveof', 'config', 'shutdown', 'select', 'msetnx'].indexOf(command) != -1) {
     clusterClient.prototype[command] = function(args, callback) {
       /*should just throw error instead of return err in callback?*/
       if (Array.isArray(args) && typeof callback === "function") {
-        callback(new Error(command, ' is not support in cluster mode'));
+        callback(new Error(command + ' is not support in cluster mode'));
         return;
       }
       var tmpCallback = to_array(arguments).pop();
       if (typeof tmpCallback === "function") {
-        tmpCallback(new Error(command, ' is not support in cluster mode'));
+        tmpCallback(new Error(command + ' is not support in cluster mode'));
         return;
       }
       /*TODO*/
@@ -262,6 +262,12 @@ commands.forEach(function(fullCommand) {
 });
 
 clusterClient.prototype.send_command = function(command, args, callback) {
+  if (!this.alive) {
+    // cluster is down or not even create.
+    // should emit error here?
+    this.emit('error', new Error('CLUSTERDOWN'));
+    callback && callback('CLUSTERDOWN', null);
+  }
   var self = this;
   //
   // process command and arguments and callback accroding to RedisClient.prototype.send_command
@@ -322,17 +328,20 @@ clusterClient.prototype.send_command = function(command, args, callback) {
       self.slotsPool[dstSlot] = tmpClient;
       client.slots.splice(client.slots.indexOf(dstSlot), 1);
       tmpClient.slots.push(dstSlot);
-      //for client.slots old remove ,add new add.
-      // console.log("moevd using address", tmpClient.address);
-      // console.log('args', args);
+      // for client.slots old remove ,add new add.
       tmpClient[command](args, callback);
       return;
     } else if (errType == 'CLUSTERDOWN') {
-      //although this server is alive ,but the cluster is down
-      //TODO:
-
+      // although this server is alive ,but the cluster is down
+      // TODO:
+      self.alive = false;
+      self.emit('error', new Error('CLUSTERDOWN'), client.address);
+      callback && callback(error, reply);
+    } else if (errType == 'TRYAGAIN') {
+      // again and again and again
+      client.send_command(command, args, wrapCallback);
     } else {
-      // console.log('no cluster err(MOVED/ASK)');
+      // everything fine.
       callback && callback(err, reply);
       return;
     }
@@ -566,9 +575,9 @@ clusterClient.prototype.DEL = clusterClient.prototype.del = function(args, callb
   });
 }
 
-clusterClient.prototype.MSETNX = clusterClient.prototype.msetnx = function(args, callback) {
-  throw new Error("because of atomic ,this command will never implement .");
-}
+// clusterClient.prototype.MSETNX = clusterClient.prototype.msetnx = function(args, callback) {
+//   throw new Error("because of atomic ,this command will never implement .");
+// }
 
 /*UNDERCONSTRUCT*/
 clusterClient.prototype.RENAME = clusterClient.prototype.rename = function(args, callback) {
