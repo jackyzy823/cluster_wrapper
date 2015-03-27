@@ -10,6 +10,7 @@ var async = require('async');
 /*
   @params: redisServers -> json format servers config [{port:xx[,host:xx[,slots:"1,2,3~100,101,105-200,xx"]]},{port:xxx}]
 */
+// may change to node_hash?
 // clientsMap = {'ip+port':client_obj}
 // client_obj -> redis_client and redis_client.slots = [slot_num1,slot_numX]
 // slotsPool -> [client_obj1,client_objx,client_obj1 ,client_objXX ...] (len:16384)
@@ -113,8 +114,9 @@ function clusterClient(clientsMap, slotsPool) {
   this.clientsNum = Object.keys(this.clientsMap).length;
   this.initializedClientNum = 0;
   this.clustered = false;
+  this.alive = false;
   //install listener on each clients
-  for(var clientAddr in this.clientsMap){
+  for (var clientAddr in this.clientsMap) {
     this.install_listeners(clientAddr);
   }
   //this.install_listeners();
@@ -299,6 +301,9 @@ clusterClient.prototype.send_command = function(command, args, callback) {
         /*New online client*/
         tmpClient = Redis.createClient(port, host);
         self.clientsMap[tmpClient.address] = tmpClient;
+        self.install_listeners(tmpClient.address);
+        //slots map add?
+        //handle event
       }
     }
     if (errType == 'ASK') {
@@ -315,10 +320,17 @@ clusterClient.prototype.send_command = function(command, args, callback) {
     } else if (errType == 'MOVED') {
       /*update slots cache after MOVED*/
       self.slotsPool[dstSlot] = tmpClient;
+      client.slots.splice(client.slots.indexOf(dstSlot), 1);
+      tmpClient.slots.push(dstSlot);
+      //for client.slots old remove ,add new add.
       // console.log("moevd using address", tmpClient.address);
       // console.log('args', args);
       tmpClient[command](args, callback);
       return;
+    } else if (errType == 'CLUSTERDOWN') {
+      //although this server is alive ,but the cluster is down
+      //TODO:
+
     } else {
       // console.log('no cluster err(MOVED/ASK)');
       callback && callback(err, reply);
