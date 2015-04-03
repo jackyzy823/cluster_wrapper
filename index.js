@@ -112,9 +112,8 @@ function clusterClient(clientsMap, slotsPool) {
   this.clientsMap = clientsMap;
   this.slotsPool = slotsPool;
   this.clientsNum = Object.keys(this.clientsMap).length;
-  this.initializedClientNum = 0;
+  this.initializedClientsNum = 0;
   this.clustered = false;
-  this.alive = false;
   //install listener on each clients
   for (var clientAddr in this.clientsMap) {
     this.install_listeners(clientAddr);
@@ -140,11 +139,12 @@ clusterClient.prototype.install_listeners = function(clientAddr) {
   var self = this;
   var client = this.clientsMap[clientAddr];
   client.on('error', function(msg) {
-    if (msg.toString().indexOf(' connect ECONNREFUSED' != -1)) {
+    if (msg.toString().indexOf('connect ECONNREFUSED' != -1)) {
       if (!self.clustered) {
         self.emit('error', new Error('create cluster fail because ' + msg), clientAddr);
       } else {
         console.log('master faildown!');
+        self.emit('error', new Error('CLUSTERDOWN'), clientAddr);
       }
     } else {
       self.emit('error', msg, clientAddr); // emit error msg with "client address info"
@@ -159,24 +159,23 @@ clusterClient.prototype.install_listeners = function(clientAddr) {
   });
   client.on('end', function() {
     //may do more in here ,cause one client  gone,the cluster wont work.
-    self.emit('end', clientAddr);
     //else this end caused by error(ECONNREFUSED)
-    if (self.clustered) {
-      var tempSlots = self.clientsMap[clientAddr].slots;
-      delete self.clientsMap[clientAddr];
-      var keys = Object.keys(self.clientsMap);
-      var size = keys.length - 1;
-      tempSlots.forEach(function(item) {
-        var c = keys[Math.random() * size | 0];
-        self.slotsPool[item] = self.clientsMap[c]
-        if (!self.clientsMap[c].slots) {
-          self.clientsMap[c].slots = [item];
-        } else {
-          self.clientsMap[c].slots.push(item);
-        }
-      });
-    }
-    // debugger;
+    // if (self.clustered) {
+    var tempSlots = self.clientsMap[clientAddr].slots;
+    delete self.clientsMap[clientAddr];
+    var keys = Object.keys(self.clientsMap);
+    var size = keys.length - 1;
+    tempSlots.forEach(function(item) {
+      var c = keys[Math.random() * size | 0];
+      self.slotsPool[item] = self.clientsMap[c]
+      if (!self.clientsMap[c].slots) {
+        self.clientsMap[c].slots = [item];
+      } else {
+        self.clientsMap[c].slots.push(item);
+      }
+    });
+    self.emit('end', clientAddr);
+    // }
   });
   client.on('reconnecting', function(msg) {
     //should add this client to clientMap ,need not according config to modify slots,c'z slots may changed when it down.
@@ -195,10 +194,12 @@ clusterClient.prototype.install_listeners = function(clientAddr) {
     self.emit('monitor', timestamp, args, clientAddr);
   });
   client.on('connect', function() {
-    self.initializedClientNum++;
-    //may reconnect
-    if (!self.clustered && self.clientsNum == self.initializedClientNum) {
-      self.clustered = true;
+    if (!self.clustered) {
+      //this count may not reliable ,cause some client may reconnect?
+      self.initializedClientsNum++;
+      if (self.clientsNum == self.initializedClientsNum) {
+        self.clustered = true;
+      }
     }
     self.emit('connect', clientAddr);
   });
@@ -262,11 +263,9 @@ commands.forEach(function(fullCommand) {
 });
 
 clusterClient.prototype.send_command = function(command, args, callback) {
-  if (!this.alive) {
-    // cluster is down or not even create.
-    // should emit error here?
-    this.emit('error', new Error('CLUSTERDOWN'));
-    callback && callback('CLUSTERDOWN', null);
+  if (!self.clustered) {
+    callback && callback(new Error('cluster have not initialized!'), null);
+    return;
   }
   var self = this;
   //
@@ -334,8 +333,7 @@ clusterClient.prototype.send_command = function(command, args, callback) {
     } else if (errType == 'CLUSTERDOWN') {
       // although this server is alive ,but the cluster is down
       // TODO:
-      self.alive = false;
-      self.emit('error', new Error('CLUSTERDOWN'), client.address);
+      // self.emit('error', new Error('CLUSTERDOWN'), client.address);
       callback && callback(error, reply);
     } else if (errType == 'TRYAGAIN') {
       // again and again and again
